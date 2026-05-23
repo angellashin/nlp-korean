@@ -35,14 +35,25 @@ PRIMARY_METRICS = [
 
 
 def load_results(paths: list[Path]) -> dict[str, dict[str, Any]]:
+    results, _ = load_results_with_metadata(paths)
+    return results
+
+
+def load_results_with_metadata(paths: list[Path]) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     merged: dict[str, dict[str, Any]] = {}
+    metadata: list[dict[str, Any]] = []
     for path in paths:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
+        meta = data.get("_meta")
+        if isinstance(meta, dict):
+            metadata.append({"path": str(path), **meta})
+        else:
+            metadata.append({"path": str(path), "missing_meta": True})
         for name, metrics in data.items():
             if isinstance(metrics, dict) and "f1" in metrics:
                 merged[name] = metrics
-    return merged
+    return merged, metadata
 
 
 def fmt(values: Any, scale: float = 1.0) -> str:
@@ -84,6 +95,30 @@ def print_table(results: dict[str, dict[str, Any]]) -> None:
             scale = 100.0 if key in ("train_valid_cf_ratio", "cons_batch_ratio") else 1.0
             row.append(fmt(metrics.get(key), scale=scale).rjust(13))
         print("  ".join(row))
+
+
+def print_metadata_warnings(metadata: list[dict[str, Any]]) -> None:
+    print("Result metadata")
+    print("---------------")
+    if not metadata:
+        print("No metadata found.")
+        return
+
+    for meta in metadata:
+        if meta.get("missing_meta"):
+            print(f"- {meta['path']}: missing _meta (likely old result; avoid mixing in final tables)")
+        else:
+            print(
+                f"- {meta['path']}: commit={meta.get('git_commit')} "
+                f"gate={meta.get('gate_version')} model={meta.get('model')} "
+                f"lambda={meta.get('lambda')} seeds={meta.get('seeds')}"
+            )
+
+    for key in ("git_commit", "gate_version", "model", "max_len"):
+        vals = {m.get(key) for m in metadata if not m.get("missing_meta")}
+        vals.discard(None)
+        if len(vals) > 1:
+            print(f"WARNING: result files mix different {key} values: {sorted(vals)}")
 
 
 def print_baseline_deltas(results: dict[str, dict[str, Any]]) -> None:
@@ -178,9 +213,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("json", nargs="+", type=Path, help="result JSON path(s)")
     args = parser.parse_args()
-    results = load_results(args.json)
+    results, metadata = load_results_with_metadata(args.json)
     if not results:
         raise SystemExit("No valid experiment results found.")
+    print_metadata_warnings(metadata)
+    print()
     print_table(results)
     print_baseline_deltas(results)
     print_interpretation_notes(results)

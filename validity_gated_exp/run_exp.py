@@ -10,7 +10,7 @@ Ablation 4종:
   Strict-Gated      : L_cls + KL(orig || swap, strict validity gate)
 """
 
-import os, sys, json, random, gc
+import os, sys, json, random, gc, subprocess
 from contextlib import nullcontext
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from collections import Counter, defaultdict
@@ -72,6 +72,20 @@ def amp_context():
 
 def make_scaler():
     return torch.cuda.amp.GradScaler(enabled=torch.cuda.is_available())
+
+
+def git_commit() -> str:
+    repo_root = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir))
+    try:
+        out = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return out.strip()
+    except Exception:
+        return 'unknown'
 
 # ── Seed ─────────────────────────────────────────────────────────────────────
 def set_seed(seed: int):
@@ -305,7 +319,15 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
         'pair_count': [], 'strict_pair_count': [],
         'train_valid_cf_count': [], 'train_valid_cf_ratio': [],
         'cons_batch_ratio': [], 'avg_valid_cf_per_batch': [],
+        'lambda': [], 'effective_lambda': [],
         'fpr_gap': [],
+        'config': {
+            'tag': tag, 'mode': mode, 'use_cons': use_cons,
+            'lambda': lam, 'epochs': n_epochs,
+            'model': MODEL_NAME, 'max_len': MAX_LEN, 'batch_size': BATCH_SIZE,
+            'lr': LR, 'weight_decay': WEIGHT_DECAY,
+            'gate_version': GATE_VERSION, 'git_commit': git_commit(),
+        },
         'epoch_history': [],   # [{seed, epochs: [{ep, val_f1, total_loss, cls_loss, cons_loss}]}]
     }
 
@@ -397,6 +419,8 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
         metrics['strict_pair_count'].append(strict_pair_count)
         metrics['train_valid_cf_count'].append(train_valid_cf_count)
         metrics['train_valid_cf_ratio'].append(train_valid_cf_ratio)
+        metrics['lambda'].append(lam)
+        metrics['effective_lambda'].append(lam * train_valid_cf_ratio)
         if seed_epochs:
             metrics['cons_batch_ratio'].append(float(np.mean([e['cons_batch_ratio'] for e in seed_epochs])))
             metrics['avg_valid_cf_per_batch'].append(float(np.mean([e['avg_valid_cf_per_batch'] for e in seed_epochs])))
@@ -470,6 +494,7 @@ if __name__ == '__main__':
         SEEDS = args.seeds
 
     print(f'Output dir: {BASE_DIR}')
+    print(f'Git commit: {git_commit()}  gate_version={GATE_VERSION}')
     print(f'Batch size: {BATCH_SIZE}  epochs={EPOCHS}  lr={LR}  lambda={LAMBDA}')
     print(f'num_workers={NUM_WORKERS}  subset={SUBSET}')
 
@@ -553,6 +578,31 @@ if __name__ == '__main__':
             tag=key, mode='strict', use_cons=True, lam=lam, n_epochs=EPOCHS,
             cf_lookup=cf_lookup)
 
+    run_meta = {
+        'git_commit': git_commit(),
+        'gate_version': GATE_VERSION,
+        'model': MODEL_NAME,
+        'max_len': MAX_LEN,
+        'batch_size': BATCH_SIZE,
+        'epochs': EPOCHS,
+        'lr': LR,
+        'weight_decay': WEIGHT_DECAY,
+        'lambda': LAMBDA,
+        'seeds': SEEDS,
+        'subset': SUBSET,
+        'num_workers': NUM_WORKERS,
+        'requested_exp': args.exp,
+        'result_path': RESULT_PATH,
+        'device': str(device),
+        'train_size': len(train_data),
+        'val_size': len(val_data),
+        'test_size': len(test_data),
+        'cf_pairs_total': n_swap,
+        'cf_pairs_base_valid': n_base_valid,
+        'cf_pairs_strict_valid': n_strict_valid,
+    }
+    all_results['_meta'] = run_meta
+
     # Summary table
     def _fmt(lst): return f'{np.mean(lst):.4f}±{np.std(lst):.4f}' if lst else 'N/A'
     def _fmt_pct(lst): return f'{100*np.mean(lst):.2f}±{100*np.std(lst):.2f}' if lst else 'N/A'
@@ -560,6 +610,8 @@ if __name__ == '__main__':
     print(f"  {'Model':<22} {'F1':>14} {'Flip Rate':>14} {'Pair Acc':>14} {'S-Flip Rate':>14} {'S-Pair Acc':>14} {'Train CF%':>10}")
     print('=' * 110)
     for name, r in all_results.items():
+        if not isinstance(r, dict) or 'f1' not in r:
+            continue
         print(f"  {name:<22}  {_fmt(r['f1']):>14}  {_fmt(r['flip_rate']):>14}  "
               f"{_fmt(r.get('pair_accuracy', [])):>14}  {_fmt(r['strict_flip_rate']):>14}  "
               f"{_fmt(r.get('strict_pair_accuracy', [])):>14}  "
@@ -582,6 +634,14 @@ if __name__ == '__main__':
     if os.path.exists(RESULT_PATH):
         with open(RESULT_PATH, 'r', encoding='utf-8') as f:
             existing = json.load(f)
+        existing_meta = existing.get('_meta')
+        if not existing_meta:
+            print('WARNING: existing result file has no _meta; use a fresh --result_path for paper tables.')
+        else:
+            for key in ('git_commit', 'gate_version', 'model', 'max_len'):
+                if existing_meta.get(key) != run_meta.get(key):
+                    print(f'WARNING: existing result _meta mismatch for {key}: '
+                          f'{existing_meta.get(key)} != {run_meta.get(key)}')
         existing.update(all_results)
         all_results = existing
     with open(RESULT_PATH, 'w', encoding='utf-8') as f:
@@ -615,6 +675,7 @@ if __name__ == '__main__':
             'train_valid_cf_ratio_mean': _m(metrics.get('train_valid_cf_ratio', [])),
             'cons_batch_ratio_mean': _m(metrics.get('cons_batch_ratio', [])),
             'avg_valid_cf_per_batch_mean': _m(metrics.get('avg_valid_cf_per_batch', [])),
+            'effective_lambda_mean': _m(metrics.get('effective_lambda', [])),
             'fpr_gap_mean': _m(metrics['fpr_gap']), 'fpr_gap_std': _s(metrics['fpr_gap']),
         })
     if rows:

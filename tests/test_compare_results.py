@@ -65,20 +65,32 @@ class CompareResultsTest(unittest.TestCase):
 
     def test_loading_and_markdown_table_from_json(self):
         payload = {
+            "_meta": {"git_commit": "abc123", "gate_version": "v1", "model": "klue/roberta-base"},
             "Baseline": {"f1": [0.79], "flip_rate": [0.05]},
             "metadata": {"ignored": True},
         }
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "results.json"
             path.write_text(json.dumps(payload), encoding="utf-8")
-            results = compare_results.load_results([path])
+            results, metadata = compare_results.load_results_with_metadata([path])
 
         self.assertEqual(list(results), ["Baseline"])
+        self.assertEqual(metadata[0]["git_commit"], "abc123")
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             compare_results.print_markdown_table(results)
         self.assertIn("| Baseline | 0.7900 |", out.getvalue())
+
+    def test_metadata_warning_for_mixed_commits(self):
+        metadata = [
+            {"path": "a.json", "git_commit": "aaa", "gate_version": "v1", "model": "m"},
+            {"path": "b.json", "git_commit": "bbb", "gate_version": "v1", "model": "m"},
+        ]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            compare_results.print_metadata_warnings(metadata)
+        self.assertIn("mix different git_commit", out.getvalue())
 
 
 if __name__ == "__main__":
