@@ -106,17 +106,35 @@ python validity_gated_exp/run_exp.py \
 ## 4. Core Experiments
 
 논문용 기본 비교는 같은 seeds, epochs, batch size로 돌립니다.
+먼저 `torch` 없이 실행되는 preflight로 tag 오타, seed 수, result path, commit 상태를 확인합니다.
 
 ```bash
-python validity_gated_exp/run_exp.py \
-  --exp Baseline "Naive Swap" Validity-Gated Strict-Gated "Masking Cons Reg" \
+python validity_gated_exp/preflight_run.py \
+  --exp Baseline "Naive Swap" Strict-Gated Strict-Matched Strict_lam=0.15 Strict_lam=0.25 \
   --seeds 42 123 456 \
   --epochs 3 \
   --batch_size 64 \
   --num_workers 2 \
-  --result_path validity_gated_exp/results_core.json \
-  2>&1 | tee train_core.log
+  --result_path validity_gated_exp/results_core_followup.json \
+  --require_core \
+  --require_clean \
+  --fresh_result_path
 ```
+
+`PREFLIGHT PASS`가 나오면 실제 학습을 시작합니다.
+
+```bash
+python validity_gated_exp/run_exp.py \
+  --exp Baseline "Naive Swap" Strict-Gated Strict-Matched Strict_lam=0.15 Strict_lam=0.25 \
+  --seeds 42 123 456 \
+  --epochs 3 \
+  --batch_size 64 \
+  --num_workers 2 \
+  --result_path validity_gated_exp/results_core_followup.json \
+  2>&1 | tee train_core_followup.log
+```
+
+`Validity-Gated`와 `Masking Cons Reg`는 시간이 남으면 보조 ablation으로 추가합니다. 먼저 위 6개 행이 있어야 Naive vs gated claim을 안전하게 정할 수 있습니다.
 
 단일 실험만 다시 돌릴 때:
 

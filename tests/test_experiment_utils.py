@@ -139,6 +139,10 @@ class ExperimentUtilsTest(unittest.TestCase):
             experiment_utils.parse_strict_lambda_tags(["Strict_lam=abc"])
         with self.assertRaises(ValueError):
             experiment_utils.parse_strict_lambda_tags(["Strict_lam=0"])
+        with self.assertRaises(ValueError):
+            experiment_utils.parse_strict_lambda_tags(["Strict_lam=nan"])
+        with self.assertRaises(ValueError):
+            experiment_utils.parse_strict_lambda_tags(["Strict_lam=inf"])
 
     def test_unknown_experiment_tags_allows_known_and_strict_lambda(self):
         unknown = experiment_utils.unknown_experiment_tags(
@@ -149,6 +153,25 @@ class ExperimentUtilsTest(unittest.TestCase):
 
     def test_unknown_experiment_tags_allows_empty_request(self):
         self.assertEqual(experiment_utils.unknown_experiment_tags(None, {"Baseline"}), [])
+
+    def test_resolve_requested_experiments_defaults_to_full_plan(self):
+        experiments, lambdas = experiment_utils.resolve_requested_experiments(None)
+        self.assertEqual(experiments, list(experiment_utils.AVAILABLE_EXPERIMENT_TAGS))
+        self.assertEqual(lambdas, [0.05, 0.2])
+
+    def test_resolve_requested_experiments_keeps_strict_lambda_followups(self):
+        experiments, lambdas = experiment_utils.resolve_requested_experiments([
+            "Baseline",
+            "Naive Swap",
+            "Strict-Gated",
+            "Strict_lam=0.15",
+        ])
+        self.assertEqual(experiments, ["Baseline", "Naive Swap", "Strict-Gated"])
+        self.assertEqual(lambdas, [0.15])
+
+    def test_resolve_requested_experiments_rejects_unknown_tags(self):
+        with self.assertRaises(ValueError):
+            experiment_utils.resolve_requested_experiments(["Naive", "Strict-Gated"])
 
     def test_collect_fairness_error_examples_buckets_pair_failures(self):
         examples = experiment_utils.collect_fairness_error_examples([

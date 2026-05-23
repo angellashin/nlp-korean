@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 
 ERROR_EXAMPLE_BUCKETS = (
     "flip",
@@ -13,6 +15,17 @@ ERROR_EXAMPLE_BUCKETS = (
     "false_positive_original",
     "false_positive_cf",
 )
+
+AVAILABLE_EXPERIMENT_TAGS = (
+    "Baseline",
+    "Masking Cons Reg",
+    "Naive Swap",
+    "Validity-Gated",
+    "Strict-Gated",
+    "Strict-Matched",
+)
+
+CORE_REPORT_EXPERIMENTS = ("Baseline", "Naive Swap", "Strict-Gated")
 
 
 def coverage_matched_lambda(
@@ -117,7 +130,7 @@ def parse_strict_lambda_tags(exp_tags: list[str] | None) -> list[float]:
             value = float(raw_value)
         except ValueError as exc:
             raise ValueError(f"Invalid Strict_lam tag: {tag}") from exc
-        if value <= 0:
+        if not math.isfinite(value) or value <= 0:
             raise ValueError(f"Strict_lam must be positive: {tag}")
         if value not in seen:
             values.append(value)
@@ -133,6 +146,25 @@ def unknown_experiment_tags(exp_tags: list[str] | None, known_tags: set[str]) ->
         tag for tag in exp_tags
         if tag not in known_tags and not tag.startswith("Strict_lam=")
     ]
+
+
+def resolve_requested_experiments(exp_tags: list[str] | None) -> tuple[list[str], list[float]]:
+    """Resolve --exp tags into base experiment names and Strict_lam follow-ups."""
+    known_tags = set(AVAILABLE_EXPERIMENT_TAGS)
+    unknown = unknown_experiment_tags(exp_tags, known_tags)
+    if unknown:
+        valid = sorted(known_tags) + ["Strict_lam=<positive_float>"]
+        raise ValueError(f"Unknown --exp tag(s): {unknown}. Valid choices: {valid}")
+
+    strict_lambdas = parse_strict_lambda_tags(exp_tags)
+    if not exp_tags:
+        return list(AVAILABLE_EXPERIMENT_TAGS), strict_lambdas
+
+    selected = [tag for tag in AVAILABLE_EXPERIMENT_TAGS if tag in exp_tags]
+    if not selected and not strict_lambdas:
+        valid = sorted(known_tags) + ["Strict_lam=<positive_float>"]
+        raise ValueError(f"No experiments selected. Valid choices: {valid}")
+    return selected, strict_lambdas
 
 
 def _round_float(value, digits: int):
