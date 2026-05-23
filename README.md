@@ -90,3 +90,11 @@ python validity_gated_exp/run_exp.py \
 ```
 
 If CUDA runs out of memory, retry with `--batch_size 32`, then `16`.
+
+After any run, compare JSON result files:
+
+```bash
+python validity_gated_exp/compare_results.py \
+  validity_gated_exp/results_naive.json \
+  validity_gated_exp/results_core_followup.json
+```

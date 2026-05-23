@@ -529,6 +529,7 @@ if __name__ == '__main__':
 
     # Summary table
     def _fmt(lst): return f'{np.mean(lst):.4f}±{np.std(lst):.4f}' if lst else 'N/A'
+    def _fmt_pct(lst): return f'{100*np.mean(lst):.2f}±{100*np.std(lst):.2f}' if lst else 'N/A'
     print('\n' + '=' * 110)
     print(f"  {'Model':<22} {'F1':>14} {'Flip Rate':>14} {'Pair Acc':>14} {'S-Flip Rate':>14} {'S-Pair Acc':>14} {'Train CF%':>10}")
     print('=' * 110)
@@ -536,7 +537,7 @@ if __name__ == '__main__':
         print(f"  {name:<22}  {_fmt(r['f1']):>14}  {_fmt(r['flip_rate']):>14}  "
               f"{_fmt(r.get('pair_accuracy', [])):>14}  {_fmt(r['strict_flip_rate']):>14}  "
               f"{_fmt(r.get('strict_pair_accuracy', [])):>14}  "
-              f"{_fmt(r.get('train_valid_cf_ratio', [])):>10}")
+              f"{_fmt_pct(r.get('train_valid_cf_ratio', [])):>10}")
 
     # Paired t-tests: flip rate alone can reward consistently wrong predictions,
     # so also report strict pair accuracy when available.

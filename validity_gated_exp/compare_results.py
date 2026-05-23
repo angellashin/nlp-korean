@@ -114,13 +114,53 @@ def print_interpretation_notes(results: dict[str, dict[str, Any]]) -> None:
     if naive and strict:
         naive_sp = mean_or_none(naive.get("strict_pair_accuracy"))
         strict_sp = mean_or_none(strict.get("strict_pair_accuracy"))
+        naive_f1 = mean_or_none(naive.get("f1"))
+        strict_f1 = mean_or_none(strict.get("f1"))
+        naive_gap = mean_or_none(naive.get("strict_prob_gap"))
+        strict_gap = mean_or_none(strict.get("strict_prob_gap"))
+        naive_cf = mean_or_none(naive.get("train_valid_cf_ratio"))
+        strict_cf = mean_or_none(strict.get("train_valid_cf_ratio"))
         if naive_sp is not None and strict_sp is not None:
             if strict_sp >= naive_sp:
                 print("- Strict-Gated beats or matches Naive on Strict PairAcc: this supports the validity-gated claim.")
             else:
                 print("- Naive beats Strict on Strict PairAcc: frame the result as an invariance-validity tradeoff.")
+            print("\nPaper-claim suggestion")
+            print("----------------------")
+            f1_close = (
+                naive_f1 is not None and strict_f1 is not None
+                and abs(strict_f1 - naive_f1) <= 0.01
+            )
+            gap_better = (
+                naive_gap is not None and strict_gap is not None
+                and strict_gap <= naive_gap
+            )
+            if strict_sp >= naive_sp and f1_close:
+                print("Use the strong claim: validity-gated CCR improves or matches Naive while preserving F1.")
+            elif strict_sp < naive_sp and f1_close and gap_better:
+                print("Use the tradeoff claim: Naive gives stronger hard-label invariance, Strict gives comparable F1 and softer probability stability.")
+            elif strict_sp < naive_sp:
+                print("Use the diagnostic claim: current strict gate is conservative; analyze TrainCF% and invalid-pair examples.")
+            else:
+                print("Use a cautious claim: identity-swap CCR helps, but gate benefits depend on metric choice.")
+            if naive_cf is not None and strict_cf is not None:
+                print(f"TrainCF coverage: Naive={100*naive_cf:.2f}% vs Strict={100*strict_cf:.2f}%.")
         else:
             print("- Strict/Naive PairAcc is missing for at least one method; rerun both with the same current code.")
+
+
+def print_markdown_table(results: dict[str, dict[str, Any]]) -> None:
+    print("\nMarkdown table")
+    print("--------------")
+    print("| Method | Macro-F1 | Pair Acc | Strict Pair Acc | Flip Rate | Strict Flip | Prob Gap | Strict Prob Gap | Train CF% |")
+    print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    for name, metrics in results.items():
+        print(
+            f"| {name} | {fmt(metrics.get('f1'))} | {fmt(metrics.get('pair_accuracy'))} | "
+            f"{fmt(metrics.get('strict_pair_accuracy'))} | {fmt(metrics.get('flip_rate'))} | "
+            f"{fmt(metrics.get('strict_flip_rate'))} | {fmt(metrics.get('prob_gap'))} | "
+            f"{fmt(metrics.get('strict_prob_gap'))} | {fmt(metrics.get('train_valid_cf_ratio'), scale=100.0)} |"
+        )
 
 
 def main() -> None:
@@ -133,6 +173,7 @@ def main() -> None:
     print_table(results)
     print_baseline_deltas(results)
     print_interpretation_notes(results)
+    print_markdown_table(results)
 
 
 if __name__ == "__main__":

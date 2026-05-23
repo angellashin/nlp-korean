@@ -196,6 +196,8 @@ python validity_gated_exp/compare_results.py \
   validity_gated_exp/results_strict_lam015.json
 ```
 
+이 스크립트는 콘솔용 비교표, Baseline 대비 delta, paper claim suggestion, Markdown 표를 같이 출력합니다. 보고서 표 초안은 `Markdown table` 섹션을 가져가면 됩니다.
+
 ## 7. Hardware Notes
 
 - CUDA GPU: start with `--batch_size 64`. If memory is enough, try 128.
