@@ -1,0 +1,184 @@
+# Validity-Gated CCR Experiment Runbook
+
+이 문서는 `Validity-Gated Counterfactual Consistency Regularization` 실험을 같은 조건으로 반복 실행하기 위한 체크리스트입니다.
+
+## 1. Environment
+
+새 서버/Jupyter 환경에서는 이 repo만 clone해서 사용합니다.
+
+```bash
+cd ~
+git clone https://github.com/angellashin/nlp-korean.git
+cd nlp-korean
+```
+
+이미 clone되어 있으면:
+
+```bash
+cd ~/nlp-korean
+git pull
+```
+
+설치 전 디스크 여유 공간을 확인합니다. PyTorch, KLUE model, HuggingFace cache 때문에 최소 15GB 이상이 안전합니다.
+
+```bash
+df -h
+```
+
+이전에 깨진 venv나 cache 때문에 공간이 부족하면 정리합니다.
+
+```bash
+rm -rf ~/.cache/pip
+rm -rf ~/.cache/huggingface
+```
+
+venv를 만들고 PyTorch를 먼저 설치한 뒤 나머지 패키지를 설치합니다.
+
+```bash
+cd ~/nlp-korean
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+python -m pip install -r validity_gated_exp/requirements.txt
+```
+
+Jupyter에서 이 venv를 커널로 쓰려면:
+
+```bash
+python -m pip install ipykernel
+python -m ipykernel install --user --name nlp-korean --display-name "nlp-korean"
+jupyter notebook
+```
+
+노트북에서는 상단 커널을 `nlp-korean`으로 선택한 뒤 확인합니다.
+
+```python
+import sys
+print(sys.executable)
+```
+
+주의: 노트북의 `!source .venv/bin/activate`는 다음 셀에 유지되지 않습니다. 커널을 venv로 선택하거나, 매번 `.venv/bin/python`을 직접 호출하세요.
+
+## 2. Data Sanity Checks
+
+먼저 데이터와 counterfactual pair 생성이 정상인지 확인합니다.
+
+```bash
+python validity_gated_exp/check_data.py 2>&1 | tee check_data.log
+python validity_gated_exp/analyze_cf_pairs.py \
+  --jsonl validity_gated_exp/data/cf_pairs_train.jsonl \
+  --out validity_gated_exp/data/cf_analysis.txt \
+  2>&1 | tee analyze_cf_pairs.log
+```
+
+보고서에는 최소한 다음 숫자를 기록합니다.
+
+- train/validation/test 크기와 hate label 비율
+- swappable train sample 수
+- base-valid, strict-valid pair 수와 비율
+- category별 strict-valid 비율
+- strict gate가 reject한 대표 예시
+
+## 3. Smoke Test
+
+전체 실험 전에 작은 subset으로 코드가 끝까지 도는지 확인합니다.
+
+```bash
+python validity_gated_exp/run_exp.py \
+  --exp Baseline \
+  --seeds 42 \
+  --subset 512 \
+  --epochs 1 \
+  --batch_size 8 \
+  --num_workers 0 \
+  --result_path validity_gated_exp/results_smoke.json \
+  2>&1 | tee smoke.log
+```
+
+노트북 셀에서 실행할 때는:
+
+```python
+!.venv/bin/python validity_gated_exp/run_exp.py --exp Baseline --seeds 42 --subset 512 --epochs 1 --batch_size 8 --num_workers 0 --result_path validity_gated_exp/results_smoke.json 2>&1 | tee smoke.log
+```
+
+## 4. Core Experiments
+
+논문용 기본 비교는 같은 seeds, epochs, batch size로 돌립니다.
+
+```bash
+python validity_gated_exp/run_exp.py \
+  --exp Baseline "Naive Swap" Validity-Gated Strict-Gated "Masking Cons Reg" \
+  --seeds 42 123 456 \
+  --epochs 3 \
+  --batch_size 64 \
+  --num_workers 2 \
+  --result_path validity_gated_exp/results_core.json \
+  2>&1 | tee train_core.log
+```
+
+단일 실험만 다시 돌릴 때:
+
+```bash
+python validity_gated_exp/run_exp.py \
+  --exp "Naive Swap" \
+  --seeds 42 123 456 \
+  --epochs 3 \
+  --batch_size 64 \
+  --num_workers 2 \
+  --result_path validity_gated_exp/results_naive.json \
+  2>&1 | tee train_naive.log
+```
+
+사용자가 말한 형태도 가능합니다.
+
+```bash
+python validity_gated_exp/run_exp.py --exp "Naive Swap" 2>&1 | tee train_new2.log
+```
+
+다만 보고서용 결과라면 `--seeds`, `--epochs`, `--batch_size`, `--result_path`를 명시하는 편이 재현성에 좋습니다.
+
+## 5. Lambda Sensitivity
+
+Strict-Gated가 중심 방법이면 lambda sensitivity를 작게 추가합니다.
+
+```bash
+python validity_gated_exp/run_exp.py \
+  --exp Strict-Gated \
+  --lambda 0.05 \
+  --seeds 42 123 456 \
+  --epochs 3 \
+  --batch_size 64 \
+  --num_workers 2 \
+  --result_path validity_gated_exp/results_strict_lam005.json \
+  2>&1 | tee train_strict_lam005.log
+
+python validity_gated_exp/run_exp.py \
+  --exp Strict-Gated \
+  --lambda 0.2 \
+  --seeds 42 123 456 \
+  --epochs 3 \
+  --batch_size 64 \
+  --num_workers 2 \
+  --result_path validity_gated_exp/results_strict_lam02.json \
+  2>&1 | tee train_strict_lam02.log
+```
+
+## 6. Hardware Notes
+
+- CUDA GPU: start with `--batch_size 64`. If memory is enough, try 128.
+- Mac MPS or CPU: use `--batch_size 8` or `16`, and smoke test first.
+- `--num_workers 0` is safer in notebooks. If stable, use `2` or `4`.
+- `2>&1 | tee file.log` means stderr와 stdout을 합쳐서 화면과 로그 파일에 동시에 저장한다는 뜻입니다.
+
+## 7. Metrics To Trust
+
+주요 지표는 아래 순서로 해석합니다.
+
+1. `Macro-F1`: 기존 hate detection 성능이 유지되는지.
+2. `Strict Pair Acc`: strict-valid counterfactual pair에서 원문과 CF를 모두 맞히는지.
+3. `Pair Acc`: 전체 swappable pair에서 둘 다 맞히는지.
+4. `Flip Rate` / `Strict Flip Rate`: 예측이 바뀌는 비율. 낮을수록 좋지만, 둘 다 틀려도 낮아질 수 있으므로 단독 주장에는 쓰지 않습니다.
+5. `FPR Gap`: identity category별 false positive 격차. category별 표본 수가 작으면 보조 지표로만 해석합니다.
+
+보고서의 핵심 claim은 `Macro-F1 유지 + Strict Pair Acc 개선 + invalid counterfactual filtering 근거`로 잡는 것이 가장 안전합니다.
