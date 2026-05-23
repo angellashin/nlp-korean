@@ -166,8 +166,7 @@ Strict-Gated가 중심 방법이면 lambda sensitivity를 작게 추가합니다
 
 ```bash
 python validity_gated_exp/run_exp.py \
-  --exp Strict-Gated \
-  --lambda 0.05 \
+  --exp Strict_lam=0.05 \
   --seeds 42 123 456 \
   --epochs 3 \
   --batch_size 64 \
@@ -176,8 +175,7 @@ python validity_gated_exp/run_exp.py \
   2>&1 | tee train_strict_lam005.log
 
 python validity_gated_exp/run_exp.py \
-  --exp Strict-Gated \
-  --lambda 0.2 \
+  --exp Strict_lam=0.2 \
   --seeds 42 123 456 \
   --epochs 3 \
   --batch_size 64 \

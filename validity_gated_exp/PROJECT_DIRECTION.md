@@ -59,19 +59,19 @@ Implementation note: consistency KL은 원문을 다시 forward하지 않고 cla
 
 ```bash
 python validity_gated_exp/run_exp.py \
-  --exp Baseline "Naive Swap" Validity-Gated Strict-Gated "Masking Cons Reg" \
+  --exp Baseline "Naive Swap" Strict-Gated Strict-Matched Strict_lam=0.15 Strict_lam=0.25 \
   --seeds 42 123 456 \
   --epochs 3 \
   --batch_size 64 \
   --num_workers 2 \
-  --result_path validity_gated_exp/results_core.json \
-  2>&1 | tee train_core.log
+  --result_path validity_gated_exp/results_core_followup.json \
+  2>&1 | tee train_core_followup.log
 ```
 
 결과 비교:
 
 ```bash
-python validity_gated_exp/compare_results.py validity_gated_exp/results_core.json
+python validity_gated_exp/compare_results.py validity_gated_exp/results_core_followup.json
 ```
 
 추가 ablation:
@@ -134,6 +134,6 @@ Construction analysis table:
 - Best outcome: Strict-Gated keeps Macro-F1 within roughly 1 point of Baseline and improves Strict Pair Acc over Baseline/Naive Swap.
 - Acceptable outcome: Strict-Gated improves pair metrics but slightly lowers F1; frame as robustness-accuracy tradeoff.
 - Trade-off outcome: Naive Swap beats Strict-Gated on Strict Pair Acc or Flip Rate, while Strict-Gated has comparable F1 or lower Prob Gap. Then report an invariance-validity tradeoff.
-- Bad outcome: Naive Swap beats Strict-Gated on every metric. Then the current gate is too conservative or wrong; analyze valid pair coverage and category distribution and try `Strict-Matched` or a larger `--lambda` for Strict-Gated.
+- Bad outcome: Naive Swap beats Strict-Gated on every metric. Then the current gate is too conservative or wrong; analyze valid pair coverage and category distribution and try `Strict-Matched` or `Strict_lam=<larger_value>`.
 - Do not claim fairness improvement from lower flip rate alone.
 - Use saved `fairness_error_examples` to compare `flip`, `both_wrong`, and `false_positive_*` cases before writing the qualitative analysis. If Naive has lower flip rate but more `both_wrong` examples, frame it as consistency without correctness rather than fairness improvement.
