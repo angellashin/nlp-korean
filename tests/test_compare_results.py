@@ -84,6 +84,28 @@ class CompareResultsTest(unittest.TestCase):
         self.assertIn("FPR Gap has small normal-group support", text)
         self.assertIn("Coverage-matched diagnostic", text)
         self.assertIn("Strict-Matched improves Strict PairAcc", text)
+        self.assertIn("Best strict-family variant", text)
+        self.assertIn("Use this as the main gated result", text)
+
+    def test_strict_family_detection_includes_lambda_followups(self):
+        self.assertTrue(compare_results.is_strict_family("Strict-Gated"))
+        self.assertTrue(compare_results.is_strict_family("Strict-Matched"))
+        self.assertTrue(compare_results.is_strict_family("Strict_lam=0.2"))
+        self.assertTrue(compare_results.is_strict_family("Strict-Gated [lambda=0.2, strict_lam02]"))
+        self.assertFalse(compare_results.is_strict_family("Naive Swap"))
+
+    def test_best_variant_by_selects_highest_strict_pair_accuracy(self):
+        results = {
+            "Strict-Gated": {"strict_pair_accuracy": [0.80]},
+            "Strict_lam=0.2": {"strict_pair_accuracy": [0.83]},
+            "Strict-Matched": {"strict_pair_accuracy": [0.82]},
+        }
+        best = compare_results.best_variant_by(
+            results,
+            ["Strict-Gated", "Strict_lam=0.2", "Strict-Matched"],
+            "strict_pair_accuracy",
+        )
+        self.assertEqual(best, ("Strict_lam=0.2", 0.83))
 
     def test_loading_and_markdown_table_from_json(self):
         payload = {

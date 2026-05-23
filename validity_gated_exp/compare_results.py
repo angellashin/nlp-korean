@@ -93,6 +93,10 @@ def mean_or_none(values: Any) -> float | None:
     return mean(vals) if vals else None
 
 
+def fmt_num(value: float | None) -> str:
+    return "N/A" if value is None else f"{value:.4f}"
+
+
 def delta_str(base: float | None, cur: float | None, direction: str) -> str:
     if base is None or cur is None:
         return "N/A"
@@ -100,6 +104,27 @@ def delta_str(base: float | None, cur: float | None, direction: str) -> str:
     good = delta > 0 if direction == "higher" else delta < 0
     marker = "+" if good else "-"
     return f"{delta:+.4f} {marker}"
+
+
+def is_strict_family(name: str) -> bool:
+    return (
+        name == "Strict-Gated"
+        or name == "Strict-Matched"
+        or name.startswith("Strict_lam=")
+        or name.startswith("Strict-Gated [")
+        or name.startswith("Strict-Matched [")
+    )
+
+
+def best_variant_by(results: dict[str, dict[str, Any]], names: list[str], metric: str) -> tuple[str, float] | None:
+    scored = []
+    for name in names:
+        value = mean_or_none(results[name].get(metric))
+        if value is not None:
+            scored.append((name, value))
+    if not scored:
+        return None
+    return max(scored, key=lambda x: x[1])
 
 
 def print_table(results: dict[str, dict[str, Any]]) -> None:
@@ -274,6 +299,34 @@ def print_interpretation_notes(results: dict[str, dict[str, Any]]) -> None:
                 print("- Strict-Matched improves probability stability but not hard pair accuracy; report this as a soft-consistency gain.")
             else:
                 print("- Strict-Matched does not improve Strict: the gate may be filtering useful signal, not merely reducing coverage.")
+
+    strict_names = [name for name in results if is_strict_family(name)]
+    best_strict = best_variant_by(results, strict_names, "strict_pair_accuracy")
+    if best_strict:
+        best_name, best_sp = best_strict
+        best_f1 = mean_or_none(results[best_name].get("f1"))
+        best_gap = mean_or_none(results[best_name].get("strict_prob_gap"))
+        naive_sp = mean_or_none(naive.get("strict_pair_accuracy")) if naive else None
+        naive_f1 = mean_or_none(naive.get("f1")) if naive else None
+        naive_gap = mean_or_none(naive.get("strict_prob_gap")) if naive else None
+        print("\nBest strict-family variant")
+        print("--------------------------")
+        print(
+            f"{best_name}: Strict PairAcc={best_sp:.4f}, "
+            f"F1={fmt_num(best_f1)}, Strict ProbGap={fmt_num(best_gap)}"
+        )
+        if naive_sp is not None:
+            f1_close = best_f1 is not None and naive_f1 is not None and abs(best_f1 - naive_f1) <= 0.01
+            if best_sp >= naive_sp and f1_close:
+                print("- Use this as the main gated result: it matches/beats Naive on Strict PairAcc while preserving F1.")
+            elif best_sp < naive_sp and f1_close:
+                print("- Use this as the strongest gated result, but frame Naive vs gated as a validity-coverage tradeoff.")
+            else:
+                print("- Use cautiously: compare F1 and pair metrics before making this the main result.")
+            if best_gap is not None and naive_gap is not None and best_gap < naive_gap:
+                print("- It also improves Strict ProbGap over Naive, useful as a soft-consistency argument.")
+        if "Strict-Matched" not in results and "Naive Swap" in results and best_name != "Strict-Matched":
+            print("- If Naive still beats this variant, run Strict-Matched to separate low coverage from gate quality.")
 
 
 def print_markdown_table(results: dict[str, dict[str, Any]]) -> None:

@@ -218,6 +218,7 @@ python validity_gated_exp/compare_results.py \
 이 스크립트는 콘솔용 비교표, Baseline 대비 delta, paper claim suggestion, Markdown 표를 같이 출력합니다. 보고서 표 초안은 `Markdown table` 섹션을 가져가면 됩니다.
 `TrainCF%`, `ConsBatch%`, `ValidCF/B`는 Strict가 Naive보다 약하게 나왔을 때 regularization signal coverage 차이를 설명하는 데 씁니다.
 `FPR minN`은 identity category별 FPR을 계산할 때 가장 작은 normal-sample group 크기입니다. 이 값이 작으면 `FPR Gap`은 보조 지표로만 해석합니다.
+`Best strict-family variant`는 `Strict-Gated`, `Strict-Matched`, `Strict_lam=*` 중 Strict Pair Acc가 가장 높은 gated 계열 결과를 골라줍니다. 보고서 대표 gated 결과를 고를 때 이 섹션을 먼저 확인합니다.
 
 비교 출력 맨 위의 `Result metadata`와 `Experiment configs`를 먼저 확인합니다.
 
