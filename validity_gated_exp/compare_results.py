@@ -36,6 +36,18 @@ PRIMARY_METRICS = [
     ("avg_valid_cf_per_batch", "ValidCF/B", "higher"),
 ]
 
+CORE_METHODS = ("Baseline", "Naive Swap", "Strict-Gated")
+REPORT_REQUIRED_METRICS = (
+    "f1",
+    "pair_accuracy",
+    "strict_pair_accuracy",
+    "flip_rate",
+    "strict_flip_rate",
+    "prob_gap",
+    "strict_prob_gap",
+)
+REPORT_CONFIG_KEYS = ("git_commit", "gate_version", "model", "max_len", "epochs", "batch_size", "lr")
+
 
 def load_results(paths: list[Path]) -> dict[str, dict[str, Any]]:
     results, _ = load_results_with_metadata(paths)
@@ -140,6 +152,107 @@ def paired_delta(values_a: Any, values_b: Any) -> list[float]:
             return []
         deltas.append(float(a) - float(b))
     return deltas
+
+
+def metric_seed_count(values: Any) -> int:
+    if not isinstance(values, list):
+        return 0
+    valid = [v for v in values if isinstance(v, (int, float)) and not math.isnan(v)]
+    return len(valid)
+
+
+def audit_report_readiness(
+    results: dict[str, dict[str, Any]],
+    metadata: list[dict[str, Any]],
+    min_seeds: int = 3,
+) -> tuple[list[str], list[str], list[str]]:
+    """Return FAIL/WARN/PASS-style checks for paper table readiness."""
+    failures: list[str] = []
+    warnings: list[str] = []
+    passes: list[str] = []
+
+    if any(meta.get("missing_meta") for meta in metadata):
+        failures.append("At least one result file is missing _meta; do not mix old results into final tables.")
+    else:
+        passes.append("All loaded result files have _meta.")
+
+    for key in ("git_commit", "gate_version", "model", "max_len"):
+        vals = {m.get(key) for m in metadata if not m.get("missing_meta")}
+        vals.discard(None)
+        if len(vals) > 1:
+            failures.append(f"Loaded result files mix different {key} values: {sorted(vals)}.")
+    dirty_files = [m.get("path", "<unknown>") for m in metadata if m.get("git_dirty")]
+    if dirty_files:
+        failures.append(f"Some result files were produced from dirty git state: {dirty_files}.")
+
+    missing_core = [name for name in CORE_METHODS if name not in results]
+    if missing_core:
+        failures.append(f"Missing core methods for a report table: {', '.join(missing_core)}.")
+    else:
+        passes.append("Core methods are present: Baseline, Naive Swap, Strict-Gated.")
+
+    core_seed_counts: dict[str, int] = {}
+    for name in CORE_METHODS:
+        metrics = results.get(name)
+        if not metrics:
+            continue
+        f1_count = metric_seed_count(metrics.get("f1"))
+        core_seed_counts[name] = f1_count
+        if f1_count < min_seeds:
+            failures.append(f"{name} has only {f1_count} valid F1 seed(s); expected at least {min_seeds}.")
+
+        missing_metrics = [key for key in REPORT_REQUIRED_METRICS if metric_seed_count(metrics.get(key)) == 0]
+        if missing_metrics:
+            failures.append(f"{name} is missing report-critical metrics: {', '.join(missing_metrics)}.")
+
+        count_mismatches = [
+            key for key in REPORT_REQUIRED_METRICS
+            if metric_seed_count(metrics.get(key)) not in (0, f1_count)
+        ]
+        if count_mismatches:
+            failures.append(f"{name} has metric seed-count mismatches: {', '.join(count_mismatches)}.")
+
+        config = metrics.get("config")
+        if not isinstance(config, dict):
+            failures.append(f"{name} is missing per-experiment config.")
+        else:
+            missing_config = [key for key in REPORT_CONFIG_KEYS if config.get(key) is None]
+            if missing_config:
+                failures.append(f"{name} config is missing keys: {', '.join(missing_config)}.")
+            if config.get("git_dirty"):
+                failures.append(f"{name} was run from dirty git state.")
+
+        fpr_min = mean_or_none(metrics.get("fpr_min_group_n"))
+        if fpr_min is not None and fpr_min < 20:
+            warnings.append(f"{name} has low FPR support (FPR minN={fpr_min:.1f}); keep FPR Gap secondary.")
+
+    if core_seed_counts and len(set(core_seed_counts.values())) > 1:
+        failures.append(f"Core methods have different seed counts: {core_seed_counts}.")
+    elif (
+        not missing_core
+        and len(core_seed_counts) == len(CORE_METHODS)
+        and all(v >= min_seeds for v in core_seed_counts.values())
+    ):
+        passes.append(f"Core methods have at least {min_seeds} seeds.")
+
+    naive = results.get("Naive Swap")
+    strict_names = [name for name in results if is_strict_family(name)]
+    best_strict = best_variant_by(results, strict_names, "strict_pair_accuracy")
+    if naive and best_strict:
+        best_name, best_sp = best_strict
+        naive_sp = mean_or_none(naive.get("strict_pair_accuracy"))
+        if naive_sp is not None and best_sp < naive_sp:
+            if "Strict-Matched" not in results:
+                warnings.append("Naive beats the best gated row but Strict-Matched is missing.")
+            if not has_strict_lambda_followup(results):
+                warnings.append("Naive beats the best gated row but no Strict_lam follow-up is present.")
+        deltas = paired_delta(results[best_name].get("strict_pair_accuracy"), naive.get("strict_pair_accuracy"))
+        if not deltas:
+            warnings.append("Best gated vs Naive paired seed comparison is unavailable.")
+        else:
+            passes.append(f"Best gated vs Naive has matched seed diagnostics ({len(deltas)} seed(s)).")
+
+    return failures, warnings, passes
 
 
 def has_strict_lambda_followup(results: dict[str, dict[str, Any]]) -> bool:
@@ -418,6 +531,20 @@ def print_next_step_recommendations(results: dict[str, dict[str, Any]]) -> None:
         print(f"- {step}")
 
 
+def print_report_readiness_audit(results: dict[str, dict[str, Any]], metadata: list[dict[str, Any]]) -> None:
+    failures, warnings, passes = audit_report_readiness(results, metadata)
+    print("\nReport readiness audit")
+    print("----------------------")
+    if not failures and not warnings:
+        print("PASS: Results are ready for a main report table, subject to qualitative error analysis.")
+    for item in failures:
+        print(f"FAIL: {item}")
+    for item in warnings:
+        print(f"WARN: {item}")
+    for item in passes:
+        print(f"PASS: {item}")
+
+
 def print_markdown_table(results: dict[str, dict[str, Any]]) -> None:
     print("\nMarkdown table")
     print("--------------")
@@ -449,6 +576,7 @@ def main() -> None:
     print_interpretation_notes(results)
     print_naive_vs_best_gated_diagnostic(results)
     print_next_step_recommendations(results)
+    print_report_readiness_audit(results, metadata)
     print_markdown_table(results)
 
 

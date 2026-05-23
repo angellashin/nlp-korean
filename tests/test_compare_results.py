@@ -160,6 +160,66 @@ class CompareResultsTest(unittest.TestCase):
         self.assertEqual(len(steps), 1)
         self.assertIn("Freeze the method search", steps[0])
 
+    def test_report_readiness_audit_passes_complete_current_results(self):
+        def row(mode, sp):
+            return {
+                "f1": [0.79, 0.80, 0.78],
+                "pair_accuracy": [0.81, 0.82, 0.80],
+                "strict_pair_accuracy": [sp, sp + 0.01, sp - 0.01],
+                "flip_rate": [0.02, 0.03, 0.02],
+                "strict_flip_rate": [0.02, 0.03, 0.02],
+                "prob_gap": [0.02, 0.02, 0.02],
+                "strict_prob_gap": [0.02, 0.02, 0.02],
+                "fpr_min_group_n": [30, 30, 30],
+                "config": {
+                    "mode": mode,
+                    "git_commit": "abc123",
+                    "git_dirty": False,
+                    "gate_version": "v1",
+                    "model": "m",
+                    "max_len": 128,
+                    "epochs": 3,
+                    "batch_size": 64,
+                    "lr": 3e-5,
+                },
+            }
+
+        results = {
+            "Baseline": row("none", 0.80),
+            "Naive Swap": row("swap", 0.82),
+            "Strict-Gated": row("strict", 0.83),
+        }
+        metadata = [{
+            "path": "results.json",
+            "git_commit": "abc123",
+            "git_dirty": False,
+            "gate_version": "v1",
+            "model": "m",
+            "max_len": 128,
+        }]
+
+        failures, warnings, passes = compare_results.audit_report_readiness(results, metadata)
+        self.assertEqual(failures, [])
+        self.assertEqual(warnings, [])
+        self.assertIn("Core methods are present", "\n".join(passes))
+
+    def test_report_readiness_audit_flags_old_or_incomplete_results(self):
+        results = {
+            "Baseline": {
+                "f1": [0.79],
+                "config": {"git_dirty": True},
+            }
+        }
+        metadata = [{"path": "old.json", "missing_meta": True}]
+
+        failures, warnings, passes = compare_results.audit_report_readiness(results, metadata)
+        joined = "\n".join(failures + warnings)
+        self.assertIn("missing _meta", joined)
+        self.assertIn("Missing core methods", joined)
+        self.assertIn("only 1 valid F1 seed", joined)
+        self.assertIn("missing report-critical metrics", joined)
+        self.assertNotIn("Core methods have at least", "\n".join(passes))
+
     def test_loading_and_markdown_table_from_json(self):
         payload = {
             "_meta": {"git_commit": "abc123", "gate_version": "v1", "model": "klue/roberta-base"},
