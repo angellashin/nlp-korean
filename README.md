@@ -12,6 +12,10 @@ Use this repo only for the current project work. Do not continue from the older 
 - `validity_gated_exp/analyze_cf_pairs.py`: construction statistics for the report.
 - `validity_gated_exp/RUNNING.md`: step-by-step runbook.
 - `validity_gated_exp/PROJECT_DIRECTION.md`: critical project direction notes.
+- `validity_gated_exp/CONFIRMED_RESULTS_2026_05_24.md`: current confirmed result snapshot.
+- `validity_gated_exp/PROJECT_PROPOSAL.md`: concise proposal for the report topic.
+- `validity_gated_exp/PAPER_DRAFT.md`: report/proposal draft for the current topic.
+- `validity_gated_exp/ABLATION_PLAN.md`: remaining lambda ablations and interpretation guide.
 
 Generated files such as checkpoints, logs, JSON results, CSV summaries, and generated counterfactual pairs are intentionally ignored by git.
 
