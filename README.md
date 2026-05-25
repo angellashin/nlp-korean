@@ -16,8 +16,9 @@ Use this repo only for the current project work. Do not continue from the older 
 - `validity_gated_exp/PROJECT_PROPOSAL.md`: concise proposal for the report topic.
 - `validity_gated_exp/PAPER_DRAFT.md`: report/proposal draft for the current topic.
 - `validity_gated_exp/ABLATION_PLAN.md`: remaining lambda ablations and interpretation guide.
+- `results/`: shared report-grade JSON outputs, summaries, and final tables.
 
-Generated files such as checkpoints, logs, JSON results, CSV summaries, and generated counterfactual pairs are intentionally ignored by git.
+Generated files such as checkpoints, logs, temporary JSON results, CSV summaries, and generated counterfactual pairs under `validity_gated_exp/` are intentionally ignored by git. Copy final shareable result JSON files into `results/raw/`.
 
 ## Fresh Server Setup
 
